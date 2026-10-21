@@ -1842,7 +1842,7 @@ home();
 /* ===== 触屏缩放：系统原生缩放（流畅）+ 松手固化停留 + 双击复原 ===== */
 (function(){
   if(!('ontouchstart' in window))return;
-  var layoutW=537,lastTap=0,settleTimer=0,meta=document.querySelector('meta[name="viewport"]');
+  var layoutW=537,settleTimer=0,meta=document.querySelector('meta[name="viewport"]');
   var userScaling=false,lastFitAt=0;
   function clamp(s){return Math.max(0.2,Math.min(10,s));}
   function getScale(){
@@ -1853,16 +1853,19 @@ home();
     s=clamp(s);
     if(meta)meta.setAttribute('content','width='+layoutW+', initial-scale='+s+', minimum-scale=0.2, maximum-scale=10.0, user-scalable=yes, viewport-fit=cover');
   }
-  function fit(){
+  function fit(force){
     userScaling=false;lastFitAt=Date.now();
     clearTimeout(settleTimer);
     var vw=screen.width||window.innerWidth;
     var s=clamp((vw>0&&vw<layoutW)?vw/layoutW:1);
     if(!meta)return;
+    var target='width='+layoutW+', initial-scale='+s+', minimum-scale=0.2, maximum-scale=10.0, user-scalable=yes, viewport-fit=cover';
+    // 已经是目标状态就直接返回：不重写 viewport，避免整页重排（会造成闪烁与点击错位）
+    if(!force&&meta.getAttribute('content')===target)return;
     // 放大状态下直接改 initial-scale 可能不生效：width 抖动强制浏览器重新应用 viewport
     meta.setAttribute('content','width='+(layoutW+1)+', initial-scale=1, minimum-scale=0.2, maximum-scale=10.0, user-scalable=yes, viewport-fit=cover');
     setTimeout(function(){
-      meta.setAttribute('content','width='+layoutW+', initial-scale='+s+', minimum-scale=0.2, maximum-scale=10.0, user-scalable=yes, viewport-fit=cover');
+      meta.setAttribute('content',target);
     },0);
   }
   // 视觉视口变化：仅在用户双指缩放时固化当前比例，fit触发的缩放不固化（避免加载时自动放大）
@@ -1885,25 +1888,41 @@ home();
       });
     }
   },{passive:true});
-  var multiTouch=false;
+  /* 双击空白处复原缩放。
+     要点：① 只在 touchend 判定，和「上一次抬起」比时间，绝不与本次按下比（否则每次单击都会被误判成双击）；
+           ② 不调用 preventDefault，避免吞掉按钮的 click；
+           ③ 触摸有位移（>12px）视为拖动/滚动，不参与双击；
+           ④ 落在按钮/输入框等交互元素上不响应，防止连点按钮时页面缩放跳变。 */
+  var multiTouch=false,tapX=0,tapY=0,tapMoved=false,lastTapEnd=0;
+  function onInteractive(el){
+    while(el&&el.nodeType===1){
+      var tag=el.tagName;
+      if(tag==='BUTTON'||tag==='A'||tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA'||tag==='LABEL')return true;
+      if(el.hasAttribute&&el.hasAttribute('onclick'))return true;
+      if(el===document.body)return false;
+      el=el.parentNode;
+    }
+    return false;
+  }
   document.addEventListener('touchstart',function(e){
-    if(e.touches.length>=2){userScaling=true;multiTouch=true;}
-    if(e.touches.length===1){
-      var now=Date.now();
-      if(now-lastTap<350){e.preventDefault();fit();lastTap=0;return;}
-      lastTap=now;
+    if(e.touches.length>=2){userScaling=true;multiTouch=true;tapMoved=true;return;}
+    if(e.touches.length===1&&e.touches[0]){
+      tapX=e.touches[0].clientX;tapY=e.touches[0].clientY;tapMoved=false;
     }
-  },{passive:false});
-  // touchend 兜底双击检测（某些浏览器缩放状态下 touchstart 不派发）
+  },{passive:true});
+  document.addEventListener('touchmove',function(e){
+    if(tapMoved||e.touches.length!==1||!e.touches[0])return;
+    var dx=e.touches[0].clientX-tapX,dy=e.touches[0].clientY-tapY;
+    if(dx*dx+dy*dy>144)tapMoved=true;
+  },{passive:true});
   document.addEventListener('touchend',function(e){
-    if(e.touches.length===0){
-      if(multiTouch){multiTouch=false;return;}
-      if(e.changedTouches.length===1){
-        var now=Date.now();
-        if(now-lastTap<350){fit();lastTap=0;}
-        else{lastTap=now;}
-      }
-    }
+    if(e.touches.length)return;
+    if(multiTouch){multiTouch=false;lastTapEnd=0;return;}
+    if(tapMoved||e.changedTouches.length!==1)return;
+    if(onInteractive(e.target)){lastTapEnd=0;return;}
+    var now=Date.now();
+    if(lastTapEnd&&now-lastTapEnd<350){lastTapEnd=0;fit(true);}
+    else lastTapEnd=now;
   },{passive:true});
   window.addEventListener('orientationchange',function(){setTimeout(fit,200);});
   setTimeout(fit,0);
