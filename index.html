@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#1a3a5c">
+<title>六爻排盘 · 选择版本</title>
+<link rel="icon" href="ios/icons/favicon.png">
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{
+    margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:32px 20px calc(32px + env(safe-area-inset-bottom,0px));
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    background:radial-gradient(120% 90% at 50% 0%,#26507c 0%,#1a3a5c 45%,#122a44 100%);
+    color:#eef3f8;
+  }
+  h1{font-size:26px;font-weight:600;margin:0 0 6px;letter-spacing:.08em}
+  .sub{font-size:13px;color:#9fb4cc;margin:0 0 34px;letter-spacing:.04em}
+  .cards{display:flex;gap:18px;flex-wrap:wrap;justify-content:center;width:100%;max-width:720px}
+  .card{
+    flex:1 1 280px;max-width:330px;background:rgba(255,255,255,.97);color:#1f2d3d;border-radius:16px;
+    padding:26px 22px 22px;text-decoration:none;display:flex;flex-direction:column;align-items:center;
+    box-shadow:0 10px 30px rgba(0,0,0,.28);transition:transform .18s ease,box-shadow .18s ease;
+    position:relative;border:2px solid transparent;
+  }
+  .card:hover{transform:translateY(-3px);box-shadow:0 16px 38px rgba(0,0,0,.34)}
+  .card.pick{border-color:#d4a24c}
+  .card img{width:96px;height:96px;border-radius:21px;box-shadow:0 4px 14px rgba(26,58,92,.28)}
+  .card .os{font-size:19px;font-weight:600;margin:16px 0 4px}
+  .card .tag{
+    font-size:11px;color:#6b7c90;background:#eef2f7;border-radius:20px;padding:3px 10px;margin-bottom:12px;
+  }
+  .card ul{margin:0 0 18px;padding-left:18px;font-size:12.5px;line-height:1.85;color:#41546a;align-self:stretch}
+  .card .go{
+    width:100%;text-align:center;background:#1a3a5c;color:#fff;border-radius:9px;padding:11px 0;
+    font-size:14px;font-weight:600;letter-spacing:.03em;
+  }
+  .card.pick .go{background:#d4a24c;color:#1a3a5c}
+  .hint{font-size:12px;color:#8ba0b8;margin-top:28px;text-align:center;line-height:1.9;max-width:560px}
+  .hint code{background:rgba(255,255,255,.1);padding:1px 6px;border-radius:4px;font-size:11px}
+</style>
+</head>
+<body>
+  <h1>六爻排盘</h1>
+  <p class="sub">选择你的设备版本 · 两者功能完全相同</p>
+
+  <div class="cards">
+    <a class="card" id="cardIos" href="ios/">
+      <img src="ios/icons/icon-192.png" alt="六爻排盘图标">
+      <div class="os">iPhone / iPad</div>
+      <div class="tag">Safari · 添加到主屏幕</div>
+      <ul>
+        <li>真实主屏图标，全屏无地址栏</li>
+        <li>适配刘海屏安全区</li>
+        <li>离线可用</li>
+      </ul>
+      <div class="go">进入 iOS 版</div>
+    </a>
+
+    <a class="card" id="cardAndroid" href="android/">
+      <img src="android/icons/icon-192.png" alt="六爻排盘图标">
+      <div class="os">Android</div>
+      <div class="tag">Chrome · 安装应用</div>
+      <ul>
+        <li>自适应图标（含 maskable）</li>
+        <li>一键安装，独立窗口运行</li>
+        <li>离线可用</li>
+      </ul>
+      <div class="go">进入 Android 版</div>
+    </a>
+  </div>
+
+  <p class="hint">
+    桌面浏览器也可以直接用，功能一致。<br>
+    两个版本都是纯静态页面，数据存在本机浏览器里，不上传任何服务器。
+  </p>
+
+<script>
+  (function () {
+    var ua = navigator.userAgent || '';
+    var isIOS = /iphone|ipad|ipod/i.test(ua) || (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1);
+    var isAndroid = /android/i.test(ua);
+    var el = isIOS ? document.getElementById('cardIos')
+           : isAndroid ? document.getElementById('cardAndroid') : null;
+    if (el) el.classList.add('pick');
+  })();
+</script>
+</body>
+</html>
