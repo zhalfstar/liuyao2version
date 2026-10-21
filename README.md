@@ -10,32 +10,49 @@ github/
 │   ├── index.html
 │   ├── manifest.webmanifest
 │   ├── sw.js
-│   ├── .nojekyll
+│   ├── .nojekyll           ← 可选：让 Pages 跳过 Jekyll 处理
 │   └── icons/  (120 152 167 180 192 512 1024 + favicon)
 └── android/                ← Android 版
     ├── index.html
     ├── manifest.webmanifest
     ├── sw.js
-    ├── .nojekyll
+    ├── .nojekyll           ← 同上
     └── icons/  (48 72 96 144 192 512 + maskable 192/512 + favicon)
 ```
 
+> `.nojekyll` 是空文件，作用只是让 GitHub Pages 跳过 Jekyll 构建、直接按静态文件发布。
+> 本项目没有以下划线开头的路径，所以**不上传也不影响使用**；补上可略微加快构建、避免以后加文件踩坑。
+
 ---
 
-## 方式一：一个仓库放两个版本（推荐）
+## 线上地址（已部署）
 
-1. 在 GitHub 新建一个仓库，例如 `liuyao`（Public）。
+| 页面 | 地址 |
+|---|---|
+| 版本选择页 | https://zhalfstar.github.io/liuyao2version/ |
+| iPhone / iPad | https://zhalfstar.github.io/liuyao2version/ios/ |
+| Android | https://zhalfstar.github.io/liuyao2version/android/ |
+
+仓库：https://github.com/zhalfstar/liuyao2version
+
+---
+
+## 部署方式（换机器 / 重建时参考）
+
+### 方式一：一个仓库放两个版本（当前采用）
+
+1. 在 GitHub 新建一个仓库，例如 `liuyao2version`（Public）。
 2. 把 **`github/` 目录里的全部内容**（不是 `github` 文件夹本身）上传到仓库根目录。
 3. 仓库 → **Settings → Pages** → Source 选 **Deploy from a branch** → Branch 选 `main` / `(root)` → Save。
 4. 等 1～2 分钟，访问：
 
-   - 选择页：`https://你的用户名.github.io/liuyao/`
-   - iOS 版：`https://你的用户名.github.io/liuyao/ios/`
-   - Android 版：`https://你的用户名.github.io/liuyao/android/`
+   - 选择页：`https://你的用户名.github.io/liuyao2version/`
+   - iOS 版：`https://你的用户名.github.io/liuyao2version/ios/`
+   - Android 版：`https://你的用户名.github.io/liuyao2version/android/`
 
 > 必须走 **https**，`http` 下 Service Worker 不生效，也就不能离线。
 
-## 方式二：两个独立仓库
+### 方式二：两个独立仓库
 
 想让两个版本各自有独立域名，就建两个仓库：
 
