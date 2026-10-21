@@ -2227,51 +2227,67 @@ home();
 (function(){
   if(!('ontouchstart' in window))return;
   var layoutW=537,settleTimer=0,meta=document.querySelector('meta[name="viewport"]');
-  var userScaling=false,lastFitAt=0;
+  var userScaling=false,lastFitAt=0,curScale=0;
+  /* 尾部这串必须保持字面量：build_single.js 会把它替换成带 viewport-fit=cover 的版本，
+     否则 iOS 上 env(safe-area-inset-*) 全部归零，刘海/横条会遮住内容 */
+  var VP_TAIL=', minimum-scale=0.2, maximum-scale=10.0, user-scalable=yes, viewport-fit=cover';
   function clamp(s){return Math.max(0.2,Math.min(10,s));}
+  /* 适配屏幕宽度时的初始缩放（绝对值） */
+  function fitScale(){
+    var vw=screen.width||window.innerWidth;
+    return clamp((vw>0&&vw<layoutW)?vw/layoutW:1);
+  }
+  /* 当前视觉缩放相对「适配宽度」的倍数。注意这是相对值，不是 initial-scale */
   function getScale(){
     if(window.visualViewport&&visualViewport.width){return layoutW/visualViewport.width;}
     return 1;
   }
+  function vp(s){return 'width='+layoutW+', initial-scale='+s+VP_TAIL;}
   function setInitialScale(s){
     s=clamp(s);
-    if(meta)meta.setAttribute('content','width='+layoutW+', initial-scale='+s+', minimum-scale=0.2, maximum-scale=10.0, user-scalable=yes, viewport-fit=cover');
+    if(!meta)return;
+    var t=vp(s);
+    if(meta.getAttribute('content')===t)return;   // 没变就别写，避免无谓重排
+    curScale=s;
+    meta.setAttribute('content',t);
+  }
+  /* 把当前缩放固化为 initial-scale（后续重排/旋转不会弹回适配宽度）。
+     关键：initial-scale 是绝对值，而 getScale() 是相对值，必须乘回 fitScale()。
+     之前少了这一步 —— 每帧都把「相对值」当「绝对值」写回，缩放按 1/0.767≈1.3 倍逐帧放大，
+     一路冲到 maximum-scale=10，表现出来就是双指缩放时画面剧烈抖动、乱跳。 */
+  function freeze(){
+    if(Date.now()-lastFitAt<800)return;
+    var s=clamp(getScale()*fitScale());
+    if(curScale&&Math.abs(s-curScale)<0.02)return;
+    setInitialScale(s);
   }
   function fit(force){
     userScaling=false;lastFitAt=Date.now();
     clearTimeout(settleTimer);
-    var vw=screen.width||window.innerWidth;
-    var s=clamp((vw>0&&vw<layoutW)?vw/layoutW:1);
+    var s=fitScale();
     if(!meta)return;
-    var target='width='+layoutW+', initial-scale='+s+', minimum-scale=0.2, maximum-scale=10.0, user-scalable=yes, viewport-fit=cover';
+    var target=vp(s);
     // 已经是目标状态就直接返回：不重写 viewport，避免整页重排（会造成闪烁与点击错位）
     if(!force&&meta.getAttribute('content')===target)return;
+    curScale=s;
     // 放大状态下直接改 initial-scale 可能不生效：width 抖动强制浏览器重新应用 viewport
-    meta.setAttribute('content','width='+(layoutW+1)+', initial-scale=1, minimum-scale=0.2, maximum-scale=10.0, user-scalable=yes, viewport-fit=cover');
+    meta.setAttribute('content','width='+(layoutW+1)+', initial-scale=1'+VP_TAIL);
     setTimeout(function(){
       meta.setAttribute('content',target);
     },0);
   }
-  // 视觉视口变化：仅在用户双指缩放时固化当前比例，fit触发的缩放不固化（避免加载时自动放大）
+  /* 视觉视口变化：只在双指缩放「结束之后」固化一次。
+     手势进行中绝不碰 meta —— 原生捏合本身是顺滑的，任何一次 meta 写入都会让浏览器
+     重新解析 viewport 并重排，画面就跟着手指抖。这里用一个「每次 resize 都重置」的
+     防抖计时器，自然等到手势停止（含惯性）后再写；且写入值与当前缩放相同，视觉无变化。 */
   if(window.visualViewport){
     visualViewport.addEventListener('resize',function(){
       if(!userScaling)return;
       if(Date.now()-lastFitAt<800)return;
       clearTimeout(settleTimer);
-      settleTimer=setTimeout(function(){setInitialScale(getScale());},120);
+      settleTimer=setTimeout(freeze,160);
     });
   }
-  // 双指缩放过程中实时固化当前比例：浏览器认为当前缩放即初始状态，缩再小也不会回弹
-  var raf=0;
-  document.addEventListener('touchmove',function(e){
-    if(e.touches.length===2&&userScaling){
-      if(raf)return;
-      raf=requestAnimationFrame(function(){
-        raf=0;
-        setInitialScale(getScale());
-      });
-    }
-  },{passive:true});
   /* 双击空白处复原缩放。
      要点：① 只在 touchend 判定，和「上一次抬起」比时间，绝不与本次按下比（否则每次单击都会被误判成双击）；
            ② 不调用 preventDefault，避免吞掉按钮的 click；
