@@ -1464,15 +1464,398 @@ function copyPaipan(){
     execCopyRich(html,done,fail);
   }
 }
+/* ===== 真·docx 导出：手写 OOXML + ZIP（store），无外部依赖，离线可用 =====
+   版式对齐「起卦方式.docx」：正文黑体14pt；表格无框、居中、黑体12pt加粗；
+   世应标红 #CC0000；干支的月/日/旬空标红加粗。 */
+const __CRC_T=(function(){
+  const t=new Uint32Array(256);
+  for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);t[n]=c>>>0;}
+  return t;
+})();
+function __crc32(u8){let c=0xFFFFFFFF;for(let i=0;i<u8.length;i++)c=__CRC_T[(c^u8[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+function __u8(s){return new TextEncoder().encode(s);}
+function __zip(files){
+  const parts=[],central=[],now=new Date();
+  const dTime=((now.getHours()<<11)|(now.getMinutes()<<5)|(now.getSeconds()>>1))&0xFFFF;
+  const dDate=(((now.getFullYear()-1980)<<9)|((now.getMonth()+1)<<5)|now.getDate())&0xFFFF;
+  const u16=v=>[v&0xFF,(v>>8)&0xFF];
+  const u32=v=>[v&0xFF,(v>>8)&0xFF,(v>>16)&0xFF,(v>>24)&0xFF];
+  let off=0;
+  files.forEach(function(f){
+    const nm=__u8(f.name), data=f.data, crc=__crc32(data);
+    const lh=[].concat(u32(0x04034b50),u16(20),u16(0x0800),u16(0),u16(dTime),u16(dDate),
+      u32(crc),u32(data.length),u32(data.length),u16(nm.length),u16(0));
+    parts.push(new Uint8Array(lh),nm,data);
+    central.push(new Uint8Array([].concat(u32(0x02014b50),u16(20),u16(20),u16(0x0800),u16(0),
+      u16(dTime),u16(dDate),u32(crc),u32(data.length),u32(data.length),
+      u16(nm.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(off))),nm);
+    off+=lh.length+nm.length+data.length;
+  });
+  let cdSize=0; central.forEach(a=>cdSize+=a.length);
+  const eocd=new Uint8Array([].concat(u32(0x06054b50),u16(0),u16(0),u16(files.length),u16(files.length),
+    u32(cdSize),u32(off),u16(0)));
+  return new Blob(parts.concat(central,[eocd]),
+    {type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+}
+function __xe(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/\u0000-\u0008|\u000B|\u000C|\u000E-\u001F/g,'');
+}
+/* HTML → 带颜色/加粗的文本段 */
+function __htmlRuns(html){
+  const box=document.createElement('div'); box.innerHTML=html||'';
+  const out=[];
+  (function walk(node,bold,color){
+    for(let i=0;i<node.childNodes.length;i++){
+      const n=node.childNodes[i];
+      if(n.nodeType===3){
+        if(n.nodeValue) out.push({t:n.nodeValue,bold:bold,color:color});
+      }else if(n.nodeType===1){
+        if(n.tagName==='BR'){out.push({t:'\n',bold:bold,color:color});continue;}
+        const st=n.getAttribute('style')||'';
+        const b=/font-weight\s*:\s*(bold|[6-9]00)/i.test(st) ? true : bold;
+        let c=color;
+        const m=st.match(/color\s*:\s*(#[0-9a-fA-F]{3,6}|[a-zA-Z]+)/);
+        if(m){
+          /* 先判颜色名，再做三位十六进制展开；否则 red 会被当成 3 位色值展开成 rreedd 而失效 */
+          const named={red:'FF0000',darkred:'8B0000',black:'000000',blue:'0000FF',
+                       green:'008000',gray:'808080',grey:'808080',orange:'FFA500',
+                       purple:'800080',brown:'A52A2A',navy:'000080',white:'FFFFFF'};
+          const raw=m[1].replace('#','');
+          if(/^[0-9a-fA-F]{6}$/.test(raw))c=raw.toUpperCase();
+          else if(/^[0-9a-fA-F]{3}$/.test(raw))c=(raw[0]+raw[0]+raw[1]+raw[1]+raw[2]+raw[2]).toUpperCase();
+          else if(named[raw.toLowerCase()])c=named[raw.toLowerCase()];
+        }
+        walk(n, (n.tagName==='B'||n.tagName==='STRONG')?true:b, c);
+      }
+    }
+  })(box,false,null);
+  return out.filter(r=>r.t!=='');
+}
+function __runsXml(runs,sizeHalfPt,boldDefault){
+  return runs.map(function(r){
+    const b=(r.bold==null?boldDefault:r.bold);
+    const col=r.color||'000000';
+    const sz=r.size||sizeHalfPt;
+    const fnt=r.font||'黑体';
+    return '<w:r><w:rPr><w:rFonts w:ascii="'+fnt+'" w:eastAsia="'+fnt+'" w:hAnsi="'+fnt+'" w:cs="'+fnt+'"/>'
+      +(b?'<w:b/><w:bCs/>':'')
+      +'<w:color w:val="'+col+'"/>'
+      +(r.spacing?'<w:spacing w:val="'+r.spacing+'"/>':'')
+      /* position 单位为半磅，正值上移：等线的行盒基线比黑体低，卦爻条会整体下沉，需抬回来 */
+      +(r.pos?'<w:position w:val="'+r.pos+'"/>':'')
+      +'<w:sz w:val="'+sz+'"/><w:szCs w:val="'+sz+'"/>'
+      +(r.shd?'<w:shd w:val="clear" w:color="auto" w:fill="'+r.shd+'"/>':'')
+      +'</w:rPr>'
+      +'<w:t xml:space="preserve">'+__xe(r.t)+'</w:t></w:r>';
+  }).join('');
+}
+function __paraXml(runs,sizeHalfPt,bold,opts){
+  opts=opts||{};
+  /* 不写 w:line，交给 sectPr 的 docGrid(linePitch=312) 决定行距，与参考文档一致 */
+  const sp='<w:spacing w:before="'+(opts.before==null?40:opts.before)+'" w:after="'+(opts.after==null?40:opts.after)+'"'
+    +(opts.line?' w:line="'+opts.line+'" w:lineRule="auto"':'')+'/>';
+  return '<w:p><w:pPr>'+sp+(opts.align?'<w:jc w:val="'+opts.align+'"/>':'')+'</w:pPr>'
+    +__runsXml(runs,sizeHalfPt,bold)+'</w:p>';
+}
+/* 递归取纯文字（不依赖 innerText，脱离文档的克隆节点更可靠） */
+function __txt(el){
+  let s='';
+  (function w(n){
+    for(let i=0;i<n.childNodes.length;i++){
+      const c=n.childNodes[i];
+      if(c.nodeType===3)s+=c.nodeValue;
+      else if(c.nodeType===1){
+        if(c.tagName==='BR')s+=' ';
+        else w(c);
+      }
+    }
+  })(el);
+  return s;
+}
+/* 估算文字宽度（twips）。黑体下 CJK/方块/箭头/○ 均为全角，宽度 = 字号；ASCII 半角。 */
+function __textW(s,halfPt){
+  const str=String(s==null?'':s);
+  let w=0;
+  for(let i=0;i<str.length;i++){
+    const c=str.charCodeAt(i);
+    const wide=(c>=0x1100)||c===0xD7||c===0xF7;
+    w+=wide?halfPt*10:halfPt*5;
+  }
+  return w;
+}
+/* 按内容算列宽：先保证每列放得下（否则 Word 会压缩列，把 ▅▅▅▅▅ 挤变形），
+   再把富余宽度优先分给卦爻两列，让整张表铺满版心。 */
+function __layoutWidths(rows,cols,tagRows){
+  const AVAIL=8306;            // 版心宽 = 11906 - 左右页边距 1800×2
+  const MAR=30;                // 单元格左右边距各 30 twips
+  const OTHERCAP=1.12;         // 其余列只留一点点余量，避免把世应推远
+  /* 卦爻列特殊：列宽就取黑条的实宽、左右内边距为 0，黑条正好顶到列边，
+     不再有「黑条两边各空一截」的问题，因此也不参与撑宽分配。 */
+  const lineCols=cols>=10?[2,7]:[2];
+  const isLine=function(c){return lineCols.indexOf(c)>=0;};
+  const need=[];
+  for(let c=0;c<cols;c++){
+    let w=0;
+    for(let i=0;i<rows.length;i++){
+      const paras=rows[i][c]||[];
+      for(let j=0;j<paras.length;j++){
+        const rr=paras[j].runs||[];
+        let cw=0;
+        for(let k=0;k<rr.length;k++)cw+=__textW(rr[k].t, rr[k].size||24)+((rr[k].spacing||0)*(rr[k].t||'').length);
+        if(cw>w)w=cw;
+      }
+    }
+    /* 标注独占一行，也在同一列，宽度也要算进去（三个标注同时出现时比六亲还宽） */
+    if(tagRows){
+      for(let i=0;i<tagRows.length;i++){
+        const rr=(tagRows[i]&&tagRows[i][c])||[];
+        let cw=0;
+        for(let k=0;k<rr.length;k++)cw+=__textW(rr[k].t, rr[k].size||18)+((rr[k].spacing||0)*(rr[k].t||'').length);
+        if(cw>w)w=cw;
+      }
+    }
+    need[c]=Math.ceil(w)+(isLine(c)?0:MAR*2);
+  }
+  for(let c=0;c<cols;c++)if(!isLine(c)&&need[c]<=MAR*2+8)need[c]=160;   // 空列（如无伏神）留窄位
+  const w=need.slice();
+  let surplus=AVAIL-need.reduce(function(a,b){return a+b;},0);
+  const others=[];for(let c=0;c<cols;c++)if(!isLine(c))others.push(c);
+  function grow(list,capFn){
+    let progress=true;
+    while(surplus>0&&progress){
+      progress=false;
+      for(let i=0;i<list.length&&surplus>0;i++){
+        const c=list[i];
+        if(w[c]<capFn(c)){w[c]++;surplus--;progress=true;}
+      }
+    }
+  }
+  grow(others,function(c){return Math.ceil(need[c]*OTHERCAP);});
+  return w;
+}
+/* 单元格 → 段落数组。每段 {align, line, runs:[{t,size,color,bold,shd}]}
+   标注（旬空/月破/暗动）不再塞进六亲格，而是通过 __lastTags 交给调用方，
+   由 __tableXml 在下一行单独输出——这样每格都只有一段，六神/爻符/六亲 天然同线。 */
+let __lastTags=null;
+function __cellParas(el,col,isHead){
+  __lastTags=null;
+  if(!el)return [{runs:[{t:''}]}];
+  if(el.classList.contains('yao-ben')||el.classList.contains('yao-bian')){
+    /* 卦爻用等线：黑体/宋体里的 ▅ 是 5 个分开的小方块，等线才是连续的一条；
+       再给一点负字距，让相邻方块重叠，彻底消掉字缝 */
+    return [{runs:[{t: el.querySelector('.yao-yang') ? '▅▅▅▅▅' : '▅▅　▅▅', font:'等线', spacing:-10, pos:1}]}];
+  }
+  if(isHead){
+    /* 藏爻列（col 1）界面本来就有「藏爻」二字，有藏爻时才显示，没有时该格是空的 */
+    return [{runs:[{t:__txt(el).replace(/\s+/g,'')}]}];
+  }
+  const red=el.innerHTML.indexOf('#c00')>=0||/class="(shi|ying)"/.test(el.innerHTML);
+  let main='';
+  let tags=[];
+  (function walk(n){
+    for(let i=0;i<n.childNodes.length;i++){
+      const c=n.childNodes[i];
+      if(c.nodeType===3){main+=c.nodeValue;continue;}
+      if(c.nodeType!==1)continue;
+      const st=c.getAttribute('style')||'';
+      /* 旬空/月破/暗动 的容器是 font-size:0 的方块，单独成段放到六亲右下方 */
+      if(/font-size\s*:\s*0/i.test(st)){
+        tags=[].slice.call(c.querySelectorAll('span'))
+          .map(function(s){return (s.textContent||'').trim();})
+          .filter(function(s){return s;});
+        continue;
+      }
+      if(c.tagName==='BR'){main+=' ';continue;}
+      walk(c);
+    }
+  })(el);
+  const paras=[{line:250,runs:[{t:main.replace(/\s+/g,' ').trim(),color:red?'CC0000':null}]}];
+  if(tags.length){
+    /* 与参考文档一致：白字 + 色块底纹；旬空灰、月破/暗动红 */
+    const runs=[];
+    tags.forEach(function(t,i){
+      if(i)runs.push({t:' ',size:18});
+      runs.push({t:t,size:18,color:'FFFFFF',shd:(t==='旬空'?'888888':'FF0000'),bold:true});
+    });
+    __lastTags=runs;            // 由 __tableXml 另起一行输出
+  }
+  return paras;
+}
+function __tableXml(rows,cols,tagRows){
+  /* 列宽按内容算（见 __layoutWidths），保证 ▅▅▅▅▅ 等宽字符不被压缩 */
+  const ws=__layoutWidths(rows,cols,tagRows);
+  const total=ws.reduce(function(a,b){return a+b;},0);
+  let x='<w:tbl><w:tblPr><w:tblW w:w="'+total+'" w:type="dxa"/><w:jc w:val="center"/>'
+    +'<w:tblCellMar><w:left w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar>'
+    +'</w:tblPr><w:tblGrid>';
+  ws.forEach(function(w){x+='<w:gridCol w:w="'+w+'"/>';});
+  x+='</w:tblGrid>';
+  /* 每格只有一段（标注已挪到独立行），所有格段落数天然一致，
+     无论查看器按顶端/居中/底端对齐，六神 / 爻符 / 六亲 的首行都落在同一条线上。 */
+  /* 只要本卦有任意一处标注，就给每一爻都配一个标注行（没标注的留空），
+     这样每一段都是「爻行 + 标注行」两行，段与段之间高度完全相等；
+     整卦都没有标注时就不加，避免多出六行空白。 */
+  const hasAnyTag=!!(tagRows&&tagRows.some(function(t){
+    return t&&t.some(function(r){return r&&r.length;});
+  }));
+  /* 表头下方的空白行：与爻行同高（260），只用来把「六神」和第一爻隔开。
+     段落标记的字体/字号必须与爻行完全一致，否则 Word 里这一行会比爻行高出一截。 */
+  function __blankRow(){
+    let r='<w:tr><w:trPr><w:trHeight w:val="260" w:hRule="exact"/></w:trPr>';
+    for(let ci=0;ci<cols;ci++){
+      r+='<w:tc><w:tcPr><w:tcW w:w="'+(ws[ci]||0)+'" w:type="dxa"/><w:noWrap/><w:hideMark/>'
+        +'<w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="30" w:type="dxa"/>'
+        +'<w:bottom w:w="0" w:type="dxa"/><w:right w:w="30" w:type="dxa"/></w:tcMar>'
+        +'<w:vAlign w:val="bottom"/></w:tcPr>'
+        +'<w:p><w:pPr><w:snapToGrid w:val="0"/><w:spacing w:before="0" w:after="0" w:line="250" w:lineRule="exact"/>'
+        +'<w:jc w:val="center"/>'
+        +'<w:rPr><w:rFonts w:ascii="黑体" w:eastAsia="黑体" w:hAnsi="黑体" w:cs="黑体"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>'
+        +'</w:pPr></w:p></w:tc>';
+    }
+    return r+'</w:tr>';
+  }
+  rows.forEach(function(row,ri){
+    /* 行高写死（hRule=exact）：不依赖段落行距，Word / WPS / 网页预览都给同一个高度，
+       不会再出现「某个查看器里带标注那一段变高」 */
+    x+='<w:tr><w:trPr><w:trHeight w:val="260" w:hRule="exact"/></w:trPr>';
+    row.forEach(function(paras,ci){
+      /* 卦爻列左右内边距为 0：列宽已等于黑条实宽，黑条正好顶到列边 */
+      const pad=((cols>=10?[2,7]:[2]).indexOf(ci)>=0)?0:30;
+      /* tcW 直接写死为列宽，避免 Word 自动重算把卦爻列又压窄；
+         上下边距归零 + 底端对齐：行框紧贴文字，文字与上方分隔线之间不留空 */
+      x+='<w:tc><w:tcPr><w:tcW w:w="'+(ws[ci]||0)+'" w:type="dxa"/><w:noWrap/><w:hideMark/>'
+        +'<w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="'+pad+'" w:type="dxa"/>'
+        +'<w:bottom w:w="0" w:type="dxa"/><w:right w:w="'+pad+'" w:type="dxa"/></w:tcMar>'
+        +'<w:vAlign w:val="bottom"/></w:tcPr>';
+      paras.forEach(function(p){
+        const runs=p.runs||[];
+        /* 固定行高（exact）：12pt 字若用 atLeast，行框会被撑到 15.6pt，文字上方多出留白；
+           exact 让行框正好贴着文字，配合底端对齐，格子上边就不再有多余空隙 */
+        /* 关掉「与文档网格对齐」：sectPr 里有 docGrid(linePitch=312)，
+           默认会吸附到 15.6pt 网格，把 exact 行距顶掉，导致 Word 里行高比预览高 */
+        x+='<w:p><w:pPr><w:snapToGrid w:val="0"/><w:spacing w:before="0" w:after="0"'
+          +' w:line="'+(p.line||250)+'" w:lineRule="exact"/>'
+          +'<w:jc w:val="'+(p.align||'center')+'"/>'
+          /* 段落标记字号统一为 12pt：空格子与有字的格子行框才会一样高。
+             之前只给空格子设了 9pt，导致同一行里有字/没字的格子高度不一致。 */
+          +'<w:rPr><w:rFonts w:ascii="黑体" w:eastAsia="黑体" w:hAnsi="黑体" w:cs="黑体"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>'
+          +'</w:pPr>'
+          +__runsXml(runs,24,true)
+          +'</w:p>';
+      });
+      x+='</w:tc>';
+    });
+    x+='</w:tr>';
+    /* 表头行之后补一行空白行 */
+    if(ri===0)x+=__blankRow();
+    /* 标注行：只在有标注的那一列写字，其余列留空，整行高度只有 9pt 一行 */
+    const trow=tagRows&&tagRows[ri];
+    if(ri>0&&hasAnyTag){
+      x+='<w:tr><w:trPr><w:trHeight w:val="190" w:hRule="exact"/></w:trPr>';
+      for(let ci=0;ci<cols;ci++){
+        const runs=(trow&&trow[ci])||[];
+        /* 标注右对齐到「六亲文字的右边缘」：六亲是居中的，右对齐的标注会偏出去一截，
+           这里按「列宽 − 六亲文字宽」的一半加右缩进，把标注拉回到六亲的右边缘 */
+        let liuW=0;
+        ((rows[ri]&&rows[ri][ci])||[]).forEach(function(p){
+          (p.runs||[]).forEach(function(r){
+            liuW+=__textW(r.t,r.size||24)+((r.spacing||0)*(r.t||'').length);
+          });
+        });
+        const contentW=(ws[ci]||0)-2*30;
+        const ind=Math.max(0,Math.round((contentW-liuW)/2));
+        x+='<w:tc><w:tcPr><w:tcW w:w="'+(ws[ci]||0)+'" w:type="dxa"/><w:noWrap/><w:hideMark/>'
+          +'<w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="30" w:type="dxa"/>'
+          +'<w:bottom w:w="0" w:type="dxa"/><w:right w:w="30" w:type="dxa"/></w:tcMar>'
+          +'<w:vAlign w:val="bottom"/></w:tcPr>'
+          +'<w:p><w:pPr><w:snapToGrid w:val="0"/><w:spacing w:before="0" w:after="0" w:line="180" w:lineRule="exact"/>'
+          +'<w:ind w:right="'+ind+'"/>'
+          +'<w:jc w:val="right"/>'
+          /* 段落标记字号固定 9pt（与标注同字号）：有标注的格和空白的格行框才会一样高，
+             否则有字那格的段落标记是默认字号，会把这一行撑高，破坏等高 */
+          +'<w:rPr><w:rFonts w:ascii="黑体" w:eastAsia="黑体" w:hAnsi="黑体" w:cs="黑体"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr>'
+          +'</w:pPr>'
+          +__runsXml(runs,18,true)
+          +'</w:p></w:tc>';
+      }
+      x+='</w:tr>';
+    }
+  });
+  return x+'</w:tbl>';
+}
+function buildDocxBlob(){
+  const wrap=document.getElementById('grid-wrap');
+  if(!wrap)return null;
+  const head=window._expHead||{};
+  const cols=wrap.classList.contains('has-bian')?10:5;
+  const els=[...wrap.querySelectorAll('.cell')];
+  const rows=[],tagRows=[];
+  for(let i=0;i<els.length;i+=cols){
+    const row=[],trow=[];
+    for(let c=0;c<cols;c++){
+      row.push(__cellParas(els[i+c],c,rows.length===0));
+      trow.push(__lastTags);          // 该格的旬空/月破/暗动，由 __cellParas 带出
+    }
+    rows.push(row);
+    tagRows.push(trow);
+  }
+  let body='';
+  if(head.line1)body+=__paraXml(__htmlRuns(head.line1),28,false,{before:60,after:60,align:'center'});
+  if(head.line2)body+=__paraXml(__htmlRuns(head.line2),28,false,{before:20,after:20,align:'center'});
+  if(head.line3)body+=__paraXml(__htmlRuns(head.line3),28,false,{before:20,after:60,align:'center'});
+  /* 神煞：前缀加粗，其余常规；左对齐（与参考文档一致） */
+  if(head.shen)body+=__paraXml([{t:'神煞：',bold:true}].concat(__htmlRuns(head.shen)),28,false,{before:60,after:60});
+  const yueRuns=[].concat(
+    __htmlRuns(head.mainYue||''),
+    [{t:'　　'}],
+    __htmlRuns(head.bianYue||'')
+  );
+  if(yueRuns.length)body+=__paraXml(yueRuns,28,false,{before:40,after:40,align:'center'});
+  const guaRuns=[{t:(head.mainGua||'')+(head.bianGua?'　　'+head.bianGua:'')}];
+  if(guaRuns[0].t)body+=__paraXml(guaRuns,28,true,{before:40,after:200,align:'center'});
+  // 表格在卦名之下（与参考文档视觉顺序一致）
+  body+=__tableXml(rows,cols,tagRows);
+  body+=__paraXml([{t:''}],28,false,{before:60,after:0});
+  const sect='<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>'
+    +'<w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800" w:header="851" w:footer="992" w:gutter="0"/>'
+    +'<w:cols w:space="425"/><w:docGrid w:type="lines" w:linePitch="312"/></w:sectPr>';
+  const docXml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    +'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+    +'<w:body>'+body+sect+'</w:body></w:document>';
+  const ct='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    +'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+    +'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+    +'<Default Extension="xml" ContentType="application/xml"/>'
+    +'<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+    +'</Types>';
+  const rels='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    +'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    +'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+    +'</Relationships>';
+  return __zip([
+    {name:'[Content_Types].xml',data:__u8(ct)},
+    {name:'_rels/.rels',data:__u8(rels)},
+    {name:'word/document.xml',data:__u8(docXml)}
+  ]);
+}
 function exportWord(){
   const wrap=document.getElementById('grid-wrap');
   if(!wrap){showToast('暂无可导出的排盘');return;}
-  const content=buildFullExportHtml();
-  const html='<html><head><meta charset="utf-8"></head><body>'+content+'</body></html>';
-  const blob=new Blob(['\ufeff'+html],{type:'application/msword'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='六爻排盘.doc';
-  document.body.appendChild(a);a.click();a.remove();
-  showToast('✅ Word文件已导出，双击打开即可');
+  try{
+    const blob=buildDocxBlob();
+    if(!blob){showToast('导出失败');return;}
+    const d=new Date();
+    const pad=n=>String(n).padStart(2,'0');
+    const fn='六爻排盘_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'_'+pad(d.getHours())+pad(d.getMinutes())+'.docx';
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=fn;
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(function(){URL.revokeObjectURL(url);},3000);
+    showToast('✅ Word(.docx)已导出');
+  }catch(e){
+    showToast('Word导出失败：'+(e&&e.message?e.message:'未知错误'));
+  }
 }
 function toggleExportMenu(){
   const m=document.getElementById('exportMenu');

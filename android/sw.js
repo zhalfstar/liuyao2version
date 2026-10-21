@@ -1,6 +1,6 @@
 /* 六爻排盘 · Service Worker
    目标：首次访问后整站可离线使用；导航请求走 network-first，保证更新能拿到。 */
-const CACHE = 'liuyao-v2';
+const CACHE = 'liuyao-v3';
 const PRECACHE = [
   './index.html',
   './manifest.webmanifest',
