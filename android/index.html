@@ -23,6 +23,10 @@
 html,body{touch-action:manipulation;-webkit-touch-action:manipulation}
 body{font-family:-apple-system,"Microsoft YaHei",system-ui,sans-serif;background:#fff;margin:0;color:#333;min-height:100%;padding-top:calc(16px + env(safe-area-inset-top,0px));padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));padding-left:calc(16px + env(safe-area-inset-left,0px));padding-right:calc(16px + env(safe-area-inset-right,0px));-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%;overscroll-behavior-y:contain}
 .box{max-width:960px;margin:auto;background:#fff;padding:16px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.05)}
+/* 排盘结果页：表格本身就占满 537 设计宽，body/.box 的左右 padding 会让整页右侧溢出 64px
+   （表格右边缘、右上角「更多」按钮会被裁掉），所以结果页把左右内边距归零 */
+body.result-mode{padding:16px 0;padding-top:calc(16px + env(safe-area-inset-top, 0px));padding-bottom:calc(16px + env(safe-area-inset-bottom, 0px));}
+body.result-mode .box{padding:16px 0;border-radius:0;box-shadow:none;}
 .top-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;gap:16px}
 .h-left{flex:1}
 .h-right{flex:1;text-align:right}
@@ -42,19 +46,27 @@ button.ghost{background:transparent}
 }
 .cell{
     white-space:nowrap;
-    padding:2px 4px;
+    padding:0 4px;
     text-align:center;
     background:#fff !important;
     font-size:14px;
+    line-height:1.2;
     vertical-align:middle;
 }
+/* 标注行：与 Word 导出同构——独立一行，右对齐到六亲文字右边缘，上下零内边距，紧贴边框。
+   高度写死 12px（= 标签高度）：没有标注的爻也占同样高度，段与段之间完全等高 */
+.tag-cell{padding:0 4px;font-size:0;line-height:0;height:12px;text-align:right;background:#fff !important;}
 .yao-ben, .yao-bian{background:#fff !important;}
 .pan-wrap, .pan-wrap .cell, .pan-wrap .cell-head, .pan-wrap .cell-left, .pan-wrap .cell-justify{background:#fff !important;}
 .pan-wrap{background:#eee;}
-.cell-left{text-align:left;padding:2px 4px;}
+.cell-left{text-align:left;padding:0 4px;}
 .cell-head{font-weight:bold;background:#fafafa;}
 .cell-justify{display:flex;justify-content:space-between;padding-inline:4px;font-weight:bold;background:#fafafa;}
 .hide-bian{visibility:hidden!important;}
+/* 右上角「更多」下拉：保存案例 / 导出 / 重新起卦 收进这里，不再占底部一行 */
+.more-menu{position:absolute;right:0;top:100%;margin-top:6px;min-width:172px;background:#fff;border:1px solid #e0e0e0;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.16);padding:6px;z-index:500;text-align:left;}
+.more-menu .mi{display:block;width:100%;box-sizing:border-box;margin:0;padding:10px 12px;border:none;background:transparent;border-radius:6px;font-size:14px;line-height:1.3;text-align:left;white-space:nowrap;}
+.more-menu .mi:active,.more-menu .mi:hover{background:#f2f2f2;}
 /* 顶部浮动文字层：月建、日辰、卦名绝对定位，不参与网格布局 */
 .pan-header-layer{position:absolute;left:0;top:0;width:100%;pointer-events:none;z-index:10;}
 .pan-header-item{position:absolute;white-space:nowrap;transform:translateX(0);font-weight:bold;text-align:left;background:#fff;padding:2px 4px;pointer-events:auto;z-index:20;}
@@ -473,6 +485,7 @@ function deleteCase(idx){
 function yearGanzhi(y){const s=(((y-4)%60+60)%60);return TG[s%10]+DZ[s%12];}
 function home(){
    _viewStack=[];
+   document.body.classList.remove('result-mode');
    document.getElementById("app").innerHTML=`
      <div style="text-align:center"><h2>六爻排盘</h2></div>
      <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;max-width:400px;margin:10px auto 0;">
@@ -727,8 +740,9 @@ function saveCanvasImage(canvas){
 function exportImage(){
   const el=document.getElementById('allWrap');
   if(!el){showToast('未找到排盘内容');return;}
-  const hideB=()=>{['btn-row','exportMenu'].forEach(id=>{const n=document.getElementById(id);if(n)n.style.display='none';});};
-  const showB=()=>{['btn-row','exportMenu'].forEach(id=>{const n=document.getElementById(id);if(n)n.style.display='';});};
+  /* 导出图片时把右上角「返回 / 更多」整条操作栏藏掉，导出的图里不留按钮 */
+  const hideB=()=>{const n=document.getElementById('topbar');if(n)n.style.display='none';};
+  const showB=()=>{const n=document.getElementById('topbar');if(n)n.style.display='';};
   hideB();
   const oldW=el.style.width, oldM=el.style.margin;
   el.style.width='537px'; el.style.margin='0 auto';
@@ -800,7 +814,7 @@ function buildPdfBlob(model){
 function exportPDF(){
   const el=document.getElementById('allWrap');
   if(!el){showToast('未找到排盘内容');return;}
-  const hid=[...document.querySelectorAll('#btn-row,#exportMenu')];
+  const hid=[...document.querySelectorAll('#topbar')];
   hid.forEach(n=>n.style.display='none');
   const restore=()=>hid.forEach(n=>n.style.display='');
   ensureHtml2canvas().then(function(){
@@ -931,18 +945,18 @@ function buildTableHtml(yaos, dizhi, shens, shi, ying, wx, bianYaos, bDizhi, bPa
      const z=dizhi[i].slice(1);
      if(xk.includes(z)||(yueZhi&&isChong(z,yueZhi))||(!yaos[i].old&&riZhi&&isChong(z,riZhi))){anyStatus=true;break;}
    }
-   const padBottom = anyStatus ? "padding-bottom:1px;" : "";
+   const colCount = hasBian ? 10 : 5;
    for(let i=5;i>=0;i--){
-       const y = yaos[i];
-       const dc = y.old ? (y.yy ? "○" : "×") : "";
-       const arrowTxt = dc ? "→" : "";
-       const zhi = dizhi[i].slice(1);
-       const lq = liuqin(wx, DIZHI_WX[zhi]);
-       const statusTag = yaoStatusHtml(zhi, y.old, yueZhi, riZhi, xk);
-       const statusDiv = statusTag ? `<div style="text-align:right;font-size:0;line-height:0;margin-top:2px;">${statusTag}</div>` : (anyStatus?`<div style="font-size:0;line-height:0;margin-top:2px;height:12px;"></div>`:"");
-       const ysSet=window._yongShen||[];
-       const ysStyle=ysSet.includes(lq)?'style="color:#c00;font-weight:bold;"':'';
-       const benNaContent = `<span ${ysStyle}>${lq}</span>${zhi}${DIZHI_WX[zhi]}${statusDiv}`;
+      const y = yaos[i];
+      const dc = y.old ? (y.yy ? "○" : "×") : "";
+      const arrowTxt = dc ? "→" : "";
+      const zhi = dizhi[i].slice(1);
+      const lq = liuqin(wx, DIZHI_WX[zhi]);
+      const statusTag = yaoStatusHtml(zhi, y.old, yueZhi, riZhi, xk);
+      const ysSet=window._yongShen||[];
+      const ysStyle=ysSet.includes(lq)?'style="color:#c00;font-weight:bold;"':'';
+      /* 标注不再塞进六亲格：另起一行输出（与 Word 导出一致），六亲格里只留正文 */
+      const benNaContent = `<span ${ysStyle}>${lq}</span>${zhi}${DIZHI_WX[zhi]}`;
        const fuShen = fuShenFiltered[i] || "";
        let shiStr = i === shi ? `<span class="shi">世</span>` : "";
        let yingStr = i === ying ? `<span class="ying">应</span>` : "";
@@ -962,14 +976,21 @@ function buildTableHtml(yaos, dizhi, shens, shi, ying, wx, bianYaos, bDizhi, bPa
        cells.push(`<div class="cell cell-left">${shens[i]}</div>`);
        cells.push(`<div class="cell cell-left">${fuShen}</div>`);
        cells.push(`<div class="cell yao-ben">${sym(y)}</div>`);
-       cells.push(`<div class="cell cell-left" style="${padBottom}">${benNaContent}</div>`);
-       cells.push(`<div class="cell" style="padding:2px 2px;">${shiStr}${yingStr}</div>`);
+       cells.push(`<div class="cell cell-left">${benNaContent}</div>`);
+       cells.push(`<div class="cell" style="padding:0 2px;">${shiStr}${yingStr}</div>`);
        if(hasBian){
          cells.push(`<div class="cell">${dc}</div>`);
          cells.push(`<div class="cell">${arrowTxt}</div>`);
          cells.push(`<div class="cell yao-bian">${bianLineHtml}</div>`);
          cells.push(`<div class="cell cell-left">${bianNaHtml}</div>`);
-         cells.push(`<div class="cell cell-left" style="padding:2px 2px;">${bianShiYing}</div>`);
+         cells.push(`<div class="cell cell-left" style="padding:0 2px;">${bianShiYing}</div>`);
+       }
+       /* 标注行：与 Word 导出结构一致——独立一行，只在六亲列写字，右对齐到六亲文字右边缘。
+          没有标注的爻也输出一行空白，保证每段「爻行 + 标注行」高度完全相等。 */
+       if(anyStatus){
+         for(let c=0;c<colCount;c++){
+           cells.push(c===3?`<div class="tag-cell">${statusTag}</div>`:`<div class="tag-cell"></div>`);
+         }
        }
    }
    // 内层网格pan-wrap：表头+爻行，浮动层直接放在pan-wrap内部以它为定位基准
@@ -1067,18 +1088,6 @@ function layoutPanHeader(){
        mgEl.style.top=(top0-56)+'px';
        mgEl.style.transform='translateX(0)';
      }
-   }
-   // 底部按钮行：宽度自适应按钮组，以表格内容区中轴为中心
-   const btnRow=document.getElementById('btn-row');
-   if(btnRow&&all){
-     const allRect=all.getBoundingClientRect();
-     const contentCenterAbs=rw.left+padL+contentW/2;
-     btnRow.style.width='max-content';
-     btnRow.style.marginLeft='0';
-     btnRow.style.marginRight='0';
-     const rowW=btnRow.offsetWidth;
-     const delta=contentCenterAbs-rowW/2-allRect.left-20;
-     btnRow.style.marginLeft=delta+'px';
    }
 }
 /* ===== 断卦助手：按五行生克 + 月日旺衰规则自动推演用神旺衰 / 生克路线 / 应期 ===== */
@@ -1299,7 +1308,7 @@ function showResult(yaos,title,name,sex,mode,dt){
    const lunarStr=solarToLunar(now.getFullYear(),now.getMonth()+1,now.getDate());
    let html = `<div style="text-align:center;">`;
    html += `<div id="allWrap" style="text-align:left;background:#fff;padding:16px 20px;display:inline-block;">`;
-   html += `<div style="text-align:left;margin-bottom:8px;"><button class="ghost" onclick="home()">← 返回</button></div>`;
+   html += `<div id="topbar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><button class="ghost" onclick="home()">← 返回</button><div style="position:relative;"><button class="ghost" id="moreBtn" onclick="toggleMoreMenu()">⋯ 更多</button><div id="moreMenu" class="more-menu" style="display:none;"><button class="mi" onclick="moreAction('save')">💾 保存案例</button><button class="mi" onclick="moreAction('export')">📤 导出</button><button class="mi" onclick="moreAction('restart')">↩ 重新起卦</button></div><div id="moreExport" class="more-menu" style="display:none;"><div style="padding:4px 12px 8px;font-size:12px;color:#999;">选择导出方式</div><button class="mi" onclick="moreAction('image')">🖼️ 导出图片</button><button class="mi" onclick="moreAction('pdf')">🖨️ 导出PDF</button><button class="mi" onclick="moreAction('word')">📄 导出Word文件</button><button class="mi" onclick="moreAction('copy')">📋 复制排盘</button><div style="height:1px;background:#eee;margin:6px 4px;"></div><button class="mi" style="color:#888;" onclick="moreAction('back')">← 返回</button></div></div></div>`;
    const gzParts=[];
    if(name) gzParts.push(`卦主：${name}`);
    if(sex&&sex!=="忽略") gzParts.push(`性别：${sex}`);
@@ -1327,22 +1336,22 @@ function showResult(yaos,title,name,sex,mode,dt){
         g[0], dz, xk2
    );
    html += analyzeGua(yaos,dg,dz,g[0],title,sex);
-   html += `<div id="btn-row" style="text-align:center;margin:30px auto 0;display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;max-width:420px;"><button onclick="saveCurCase()">💾 保存案例</button><button onclick="toggleExportMenu()">📤 导出</button><button class="ghost" onclick="home()">← 重新起卦</button></div>`;
-   html += `<div id="exportMenu" style="display:none;margin-top:12px;text-align:center;border:1px solid #ddd;border-radius:6px;padding:12px;max-width:420px;background:#fafafa;"><div style="margin-bottom:8px;font-weight:bold;">选择导出方式</div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;"><button onclick="exportImage()">🖼️ 导出图片</button><button onclick="exportPDF()">🖨️ 导出PDF</button><button onclick="exportWord()">📄 导出Word文件</button><button onclick="copyPaipan()">📋 复制排盘</button></div><div style="margin-top:10px;"><button class="ghost" onclick="toggleExportMenu()">取消</button></div></div>`;
    html += `<div style="margin-top:10px"><label style="display:block;margin-bottom:6px;font-weight:bold;">断语</label><textarea id="guaNote" rows="4" style="width:100%;box-sizing:border-box;padding:8px;font-size:14px;border:1px solid #ccc;border-radius:4px;margin-top:10px;" placeholder="在此输入断语、心得记录..."></textarea></div>`;
    html += `</div></div>`;
    document.getElementById("app").innerHTML=html;
+   document.body.classList.add('result-mode');
    window._curCase.fullHtml=html;
    setTimeout(layoutPanHeader,50);
    if(window.__zoomFit)setTimeout(window.__zoomFit,120);
 }
 function buildTableHtmlForCopy(wrap){
   const cells=[...wrap.querySelectorAll('.cell')];
+  const tagCells=[...wrap.querySelectorAll('.tag-cell')];
   const hasBian=wrap.classList.contains('has-bian');
   const cols=hasBian?10:5;
   const rows=Math.ceil(cells.length/cols);
   const redCell=(cell)=>cell.innerHTML.indexOf('#c00')>=0||/class="(shi|ying)"/.test(cell.innerHTML);
-  const cellTxt=(cell,isHeadRow)=>{
+  const cellTxt=(cell,isHeadRow,tagHtml)=>{
     if(!cell)return '';
     if(cell.classList.contains('yao-ben')||cell.classList.contains('yao-bian')){
       if(cell.querySelector('.yao-yang')){
@@ -1352,9 +1361,9 @@ function buildTableHtmlForCopy(wrap){
     }
     const tmp=document.createElement('div');
     tmp.innerHTML=cell.innerHTML;
-    // 标注 div → 收集到右对齐标注区
+    // 标注现在在独立的 .tag-cell 行里，由调用方按行传入；兼容旧结构再兜一层 div
     const statusEls=[...tmp.querySelectorAll('div')];
-    const statusHTML=statusEls.map(d=>d.innerHTML).join(' ');
+    const statusHTML=tagHtml||statusEls.map(d=>d.innerHTML).join(' ');
     statusEls.forEach(d=>d.remove());
     tmp.querySelectorAll('.yao-line').forEach(s=>s.remove());
     let main=tmp.innerHTML.replace(/>\s+</g,'><').replace(/\s{2,}/g,' ');
@@ -1370,7 +1379,8 @@ function buildTableHtmlForCopy(wrap){
     h+='<tr>';
     for(let c=0;c<cols;c++){
       const cell=cells[r*cols+c];
-      const txt=cellTxt(cell, r===0);
+      const tagEl=(r>0&&tagCells.length)?tagCells[(r-1)*cols+c]:null;
+      const txt=cellTxt(cell, r===0, tagEl?tagEl.innerHTML:'');
       const color=(cell&&redCell(cell))?'color:#c00;font-weight:bold;':'';
       const tdStyle=(r===0)
         ? 'padding:3px 5px;white-space:nowrap;text-align:center;height:auto;vertical-align:middle;font-family:SimHei,黑体,Microsoft YaHei,sans-serif;font-weight:bold;'+color
@@ -1393,6 +1403,7 @@ function buildPlainText(wrap){
   if(head.mainYue)lines.push(strip(head.mainYue)+'　　'+strip(head.bianYue||''));
   if(head.mainGua)lines.push(strip(head.mainGua||'')+'　　'+strip(head.bianGua||''));
   const cells=[...wrap.querySelectorAll('.cell')];
+  const tagCells=[...wrap.querySelectorAll('.tag-cell')];
   const hasBian=wrap.classList.contains('has-bian');
   const cols=hasBian?10:5;
   const rows=Math.ceil(cells.length/cols);
@@ -1404,7 +1415,14 @@ function buildPlainText(wrap){
         if(cell.classList.contains('yao-ben')||cell.classList.contains('yao-bian')){
           arr.push(cell.querySelector('.yao-yang')?'▅▅▅▅▅':'▅▅ ▅▅');
         }else{
-          arr.push(cell.textContent.replace(/\s+/g,' ').trim());
+          let s=cell.textContent.replace(/\s+/g,' ').trim();
+          /* 标注在独立一行里，按行并回六亲格，纯文本仍是「兄弟戌土 旬空」 */
+          if(c===3&&r>0&&tagCells.length){
+            const t=(tagCells[(r-1)*cols+c]||{}).textContent||'';
+            const tt=t.replace(/\s+/g,' ').trim();
+            if(tt)s=(s?s+' ':'')+tt;
+          }
+          arr.push(s);
         }
       }else{arr.push('');}
     }
@@ -1681,6 +1699,19 @@ function __cellParas(el,col,isHead){
   }
   return paras;
 }
+/* 标注行单元格（.tag-cell）→ runs。与参考文档一致：白字 + 色块底纹；旬空灰、月破/暗动红 */
+function __tagRuns(el){
+  const tags=[].slice.call(el.querySelectorAll('span'))
+    .map(function(s){return (s.textContent||'').trim();})
+    .filter(function(s){return s;});
+  if(!tags.length)return null;
+  const runs=[];
+  tags.forEach(function(t,i){
+    if(i)runs.push({t:' ',size:18});
+    runs.push({t:t,size:18,color:'FFFFFF',shd:(t==='旬空'?'888888':'FF0000'),bold:true});
+  });
+  return runs;
+}
 function __tableXml(rows,cols,tagRows){
   /* 列宽按内容算（见 __layoutWidths），保证 ▅▅▅▅▅ 等宽字符不被压缩 */
   const ws=__layoutWidths(rows,cols,tagRows);
@@ -1789,15 +1820,24 @@ function buildDocxBlob(){
   const head=window._expHead||{};
   const cols=wrap.classList.contains('has-bian')?10:5;
   const els=[...wrap.querySelectorAll('.cell')];
+  const tagCells=[...wrap.querySelectorAll('.tag-cell')];
   const rows=[],tagRows=[];
   for(let i=0;i<els.length;i+=cols){
     const row=[],trow=[];
     for(let c=0;c<cols;c++){
       row.push(__cellParas(els[i+c],c,rows.length===0));
-      trow.push(__lastTags);          // 该格的旬空/月破/暗动，由 __cellParas 带出
+      trow.push(null);               // 标注在独立的 .tag-cell 行里，下面统一取回
     }
     rows.push(row);
     tagRows.push(trow);
+  }
+  /* 界面上标注已经是独立一行（与 Word 同构），这里按行取回来交给 __tableXml 输出 */
+  for(let r=1;r<rows.length;r++){
+    for(let c=0;c<cols;c++){
+      const tc=tagCells[(r-1)*cols+c];
+      const runs=tc?__tagRuns(tc):null;
+      if(runs&&runs.length)tagRows[r][c]=runs;
+    }
   }
   let body='';
   if(head.line1)body+=__paraXml(__htmlRuns(head.line1),28,false,{before:60,after:60,align:'center'});
@@ -1856,10 +1896,49 @@ function exportWord(){
     showToast('Word导出失败：'+(e&&e.message?e.message:'未知错误'));
   }
 }
-function toggleExportMenu(){
-  const m=document.getElementById('exportMenu');
-  if(m)m.style.display=(m.style.display==='none')?'block':'none';
+/* ===== 右上角「更多」下拉：一级 = 保存案例 / 导出 / 重新起卦，二级 = 四种导出方式 ===== */
+function closeMoreMenu(){
+  ['moreMenu','moreExport'].forEach(function(id){
+    const n=document.getElementById(id);
+    if(n)n.style.display='none';
+  });
 }
+function toggleMoreMenu(){
+  const m=document.getElementById('moreMenu');
+  if(!m)return;
+  const open=(m.style.display!=='none');
+  closeMoreMenu();
+  if(!open)m.style.display='block';
+}
+function moreAction(k){
+  if(k==='export'){                      // 展开二级：导出方式
+    const a=document.getElementById('moreMenu'),b=document.getElementById('moreExport');
+    if(a)a.style.display='none';
+    if(b)b.style.display='block';
+    return;
+  }
+  if(k==='back'){                        // 从二级退回一级
+    const a=document.getElementById('moreMenu'),b=document.getElementById('moreExport');
+    if(b)b.style.display='none';
+    if(a)a.style.display='block';
+    return;
+  }
+  closeMoreMenu();
+  if(k==='save')saveCurCase();
+  else if(k==='restart')home();
+  else if(k==='image')exportImage();
+  else if(k==='pdf')exportPDF();
+  else if(k==='word')exportWord();
+  else if(k==='copy')copyPaipan();
+}
+/* 点空白处收起下拉 */
+document.addEventListener('click',function(e){
+  const m=document.getElementById('moreMenu');
+  if(!m||m.style.display==='none')return;
+  const box=m.parentNode;
+  if(box&&box.contains(e.target))return;
+  closeMoreMenu();
+});
 function saveCurCase(){
    if(!window._curCase)return;
    const noteEl=document.getElementById('guaNote');
@@ -1895,7 +1974,12 @@ function showToast(msg){
    if(!t){
       t=document.createElement('div');
       t.id='toastTip';
-      t.style.cssText='position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 24px;border-radius:6px;z-index:9999;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,0.2);';
+      /* 位置要避开刘海 / 状态栏：viewport-fit=cover 下 top:20px 会正好落在刘海下面。
+         先给固定兜底，再叠加 env(safe-area-inset-top)——不支持 env 的环境退回 72px。 */
+      t.style.cssText='position:fixed;top:72px;top:calc(env(safe-area-inset-top, 0px) + 72px);'
+        +'left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 24px;border-radius:6px;'
+        +'z-index:9999;font-size:14px;line-height:1.4;text-align:center;max-width:calc(100vw - 32px);'
+        +'box-sizing:border-box;box-shadow:0 2px 8px rgba(0,0,0,0.2);';
       document.body.appendChild(t);
    }
    t.textContent=msg;
@@ -1943,6 +2027,7 @@ function handleImport(ev){
 // 否则每敲一个字就 pushState 一次，手机返回键要按十几次才能退出。
 function showCases(pushNav){
    if(pushNav)navPush({view:'cases'});
+   document.body.classList.remove('result-mode');
    // 重渲染会重建 DOM，先记下搜索框的焦点与光标位置，渲染完再还回去
    const ae=document.activeElement;
    const focusState=(ae&&ae.id==='caseSearch')?{pos:ae.selectionStart}:null;
@@ -2017,6 +2102,7 @@ function statBox(num,label,color){
 }
 function showStats(pushNav){
   if(pushNav)navPush({view:'stats'});
+  document.body.classList.remove('result-mode');
   const all=getCases();
   const total=all.length;
   const card=(t,inner)=>`<div style="border:1px solid #e6e0d4;border-radius:6px;background:#fff;padding:10px 12px;margin-bottom:10px;"><div style="font-weight:bold;color:#8a5a00;margin-bottom:8px;">${t}</div>${inner}</div>`;
@@ -2106,9 +2192,8 @@ function viewCase(idx){
    navPush({view:'case',idx:idx});
    if(c.fullHtml){
      let h=c.fullHtml;
-     // 替换：保存案例按钮→返回列表，重新起卦按钮移除；输出页断语框在案例页不再显示
-     h=h.replace(/<button[^>]*onclick="saveCurCase\(\)"[^>]*>.*?<\/button>/,'<button class="ghost" onclick="navBack()">← 返回列表</button>');
-     h=h.replace(/<button[^>]*onclick="home\(\)"[^>]*>.*?<\/button>/,'');
+     // 顶部「返回」改成「返回列表」，「更多」下拉保留（案例页也能导出）
+     h=h.replace(/<button class="ghost" onclick="home\(\)">← 返回<\/button>/,'<button class="ghost" onclick="navBack()">← 返回列表</button>');
      // 案例查看不再显示输出页断语框，改由下方「断语/应验」编辑区承载
      h=h.replace(/<div style="margin-top:10px"><label[^>]*>断语<\/label><textarea id="guaNote"[^>]*>.*?<\/textarea><\/div>/,'');
      // 旧案例干支行月令补红色（与世应一致），避免旧格式月令为黑色
@@ -2117,6 +2202,7 @@ function viewCase(idx){
      h=h.replace(/<\/div><\/div>\s*$/,
        `<div style="margin-top:10px"><label style="display:block;margin-bottom:6px;font-weight:bold;">断语</label><textarea id="guaDuan" rows="2" style="width:100%;box-sizing:border-box;padding:8px;font-size:14px;border:1px solid #ccc;border-radius:4px;">${c.duanyu||''}</textarea><label style="display:block;margin:10px 0 6px;font-weight:bold;">应验</label><textarea id="guaYing" rows="2" style="width:100%;box-sizing:border-box;padding:8px;font-size:14px;border:1px solid #ccc;border-radius:4px;">${c.yingyan||''}</textarea><div style="text-align:right;margin-top:6px;"><button onclick="saveVerdict(${idx})">💾 保存断语/应验</button></div></div></div></div>`);
      document.getElementById("app").innerHTML=h;
+     document.body.classList.add('result-mode');
      // 旧存档的 fullHtml 里没有断卦参考，补插到排盘表之后
      if(h.indexOf('断卦参考')<0){
        const gw=document.getElementById('grid-wrap');
@@ -2217,6 +2303,7 @@ function viewCase(idx){
    html += `<div style="text-align:center;margin-top:16px"><button class="ghost" onclick="navBack()">← 返回列表</button></div>`;
    html += `</div></div>`;
    document.getElementById("app").innerHTML=html;
+   document.body.classList.add('result-mode');
    setTimeout(layoutPanHeader,50);
    if(window.__zoomFit)setTimeout(window.__zoomFit,120);
 }
